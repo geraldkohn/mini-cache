@@ -2,6 +2,10 @@ package lru
 
 import "container/list"
 
+/*
+	LRU 缓存淘汰策略
+*/
+
 // Cache is a LRU cache. It is not safe for concurrent access.
 type Cache struct {
 	// 允许使用的最大内存
