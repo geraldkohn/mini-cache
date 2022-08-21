@@ -6,9 +6,7 @@ import (
 	"sync"
 )
 
-/*
-	负责与外部交互，控制缓存存储和获取的主流程
-*/
+// 负责与外部交互，控制缓存存储和获取的主流程
 
 /*
 	接收 key --> 检查是否被缓存 -----> 返回缓存值 ⑴
@@ -97,7 +95,9 @@ func (g *Group) load(key string) (ByteView, error) {
 	return g.getFromLocalDB(key)
 }
 
+// （3）数据源（数据库）获取缓存添加到缓存中。
 func (g *Group) getFromLocalDB(key string) (ByteView, error) {
+	// 调用回调函数，获取本地数据库中的k-v值。
 	byteSlice, err := g.gettr.Get(key)
 	if err != nil {
 		return ByteView{}, err

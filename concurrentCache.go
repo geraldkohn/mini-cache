@@ -6,9 +6,8 @@ import (
 	"github.com/geraldkohn/distributed-cache/lru"
 )
 
-/*
-	实现并发控制
-*/
+
+// 实现并发控制
 
 type cache struct {
 	mu            *sync.Mutex

@@ -1,8 +1,6 @@
 package cache
 
-/*
-	缓存值的抽象与封装
-*/
+// 缓存值的抽象与封装
 
 // ByteView 用来表示缓存值，只读
 type ByteView struct {
