@@ -1,3 +1,3 @@
-module github.com/geraldkohn/distributed-cache
+module distributed-cache
 
 go 1.18

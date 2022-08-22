@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	cache "github.com/geraldkohn/distributed-cache"
+	cache "distributed-cache"
 )
 
 // 定义一个函数类型 F，并且实现接口 A 的方法，然后在这个方法中调用自己。

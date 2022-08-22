@@ -1,35 +1,50 @@
 package cache
 
 import (
+	"distributed-cache/consistenthash"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 )
 
 // 提供被其他节点访问的能力（基于HTTP）
 
+var _ PeerService = (*httpClient)(nil)
 
-const defaultBasePath = "/api/cache/"
+const (
+	defaultBasePath = "/api/cache/"
+	defaultReplicas = 50
+)
 
+// HTTP Server Pool
 type HttpPool struct {
 	// 记录URL地址，主机名、IP、端口号。
-	self string
+	selfPath string
 	// 节点通讯地址的前缀，self+basePath开头的请求，就用于节点之间的访问。
 	basePath string
+	// 互斥锁
+	mu sync.Mutex
+	// 一致性Hash算法控制类
+	consistentHashPool *consistenthash.Pool
+	// 映射远程节点的的http client。keyed by e.g. "http://10.0.0.2:8008"
+	httpClient map[string]*httpClient
 }
 
 // 初始化节点的HTTPPool
-func NewHttpPool(self string) *HttpPool {
+func NewHttpPool(selfPath string) *HttpPool {
 	return &HttpPool{
-		self: self,
+		selfPath: selfPath,
 		basePath: defaultBasePath,
 	}
 }
 
 // 日志
 func (p *HttpPool) Log(format string, v ...interface{}) {
-	log.Printf("[Server %s] %s", p.self, fmt.Sprintf(format, v...))
+	log.Printf("[Server %s] %s", p.selfPath, fmt.Sprintf(format, v...))
 }
 
 // ServeHttp处理所有的请求
@@ -54,7 +69,7 @@ func (p *HttpPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such group: "+groupName, http.StatusNotFound)
 		return
 	}
-	
+
 	view, err := group.Get(key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -65,3 +80,61 @@ func (p *HttpPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(view.ByteSlice())
 }
 
+// 添加新节点，需要更新映射
+func (p *HttpPool) Set(peersPath ...string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// 一致性Hash算法初始化
+	p.consistentHashPool = consistenthash.New(defaultReplicas, nil)
+	p.consistentHashPool.Add(peersPath...)
+	// 为每一个节点都初始化一个Http客户端
+	p.httpClient = make(map[string]*httpClient, len(peersPath))
+	for _, peerPath := range peersPath {
+		p.httpClient[peerPath] = &httpClient{baseURL: peerPath + p.basePath}
+	}
+}
+
+// PickerPeer() 包装了一致性哈希算法的 Get() 方法，根据具体的 key，选择节点，返回节点对应的 HTTP 客户端。
+func (p *HttpPool) PickPeer(key string) (PeerService, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// 根据虚拟节点的key来查找真实节点的位置。
+	if peerPath := p.consistentHashPool.Get(key); peerPath != "" && peerPath != p.selfPath {
+		p.Log("Pick Peer %s", peerPath)
+		return p.httpClient[peerPath], true
+	}
+	return nil, false
+}
+
+// HTTP客户端类
+type httpClient struct {
+	baseURL string
+}
+
+// 实现HTTP客户端接口
+func (h *httpClient) Get(group string, key string) ([]byte, error) {
+	u := fmt.Sprintf(
+		"%v/%v/%v",
+		h.baseURL,
+		url.QueryEscape(group),
+		url.QueryEscape(key),
+	)
+	// 获取返回值
+	res, err := http.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned: %v", res.Status)
+	}
+
+	// 返回体为[]byte
+	bytes, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body: %v", err)
+	}
+
+	return bytes, nil
+}

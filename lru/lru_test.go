@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/geraldkohn/distributed-cache/lru"
+	"distributed-cache/lru"
 )
 
 type String string

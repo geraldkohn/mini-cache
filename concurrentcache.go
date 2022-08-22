@@ -3,9 +3,8 @@ package cache
 import (
 	"sync"
 
-	"github.com/geraldkohn/distributed-cache/lru"
+	"distributed-cache/lru"
 )
-
 
 // 实现并发控制
 

@@ -16,6 +16,14 @@ import (
                             |-----> 调用`回调函数`，获取值并添加到缓存 --> 返回缓存值 ⑶
 */
 
+/*
+	流程2：
+	使用一致性哈希选择节点        是                                    是
+    |-----> 是否是远程节点 -----> HTTP 客户端访问远程节点 --> 成功？-----> 服务端返回返回值
+                    |  否                                    ↓  否
+                    |----------------------------> 回退到本地节点处理。
+*/
+
 // （3）如果缓存不存在，应该从数据源（数据库）获取缓存添加到缓存中。为了保持可扩展性，这里设计了一个回调函数，当缓存不存在时，调用这个函数，得到源数据。
 
 // Gettr 接口为一个key载入数据
@@ -43,6 +51,8 @@ type Group struct {
 	gettr Gettr
 	// 并发控制缓存
 	coreCache cache
+	// 查找节点
+	peerPicker PeerPicker
 }
 
 var (
@@ -87,12 +97,34 @@ func (g *Group) Get(key string) (ByteView, error) {
 		return v, nil
 	}
 
-	// 调用回调函数，获取本地数据库中的值，并写入缓存
+	// 获取k-v
 	return g.load(key)
 }
 
 func (g *Group) load(key string) (ByteView, error) {
+	// 注册了集群节点
+	if g.peerPicker != nil {
+		var err error
+		// key匹配到了集群节点
+		if peer, ok := g.peerPicker.PickPeer(key); ok {
+			// 从匹配的节点中获取了信息
+			if value, err := g.getFromCluster(peer, key); err == nil {
+				return value, nil
+			}
+			// 从集群获取失败
+			log.Println("[GeeCache] Failed to get from peer", err)
+		}
+	}
 	return g.getFromLocalDB(key)
+}
+
+// (2) 集群中获取数据
+func (g *Group) getFromCluster(peer PeerService, key string) (ByteView, error) {
+	bytes, err := peer.Get(g.name, key)
+	if err != nil {
+		return ByteView{}, err
+	}
+	return ByteView{b: bytes}, nil
 }
 
 // （3）数据源（数据库）获取缓存添加到缓存中。
@@ -110,4 +142,11 @@ func (g *Group) getFromLocalDB(key string) (ByteView, error) {
 
 func (g *Group) populateCache(key string, value ByteView) {
 	g.coreCache.add(key, value)
+}
+
+func (g *Group) RegisterPeers(peerPicker PeerPicker) {
+	if g.peerPicker != nil {
+		log.Println("RegisterPeerPicker called more than once")
+	}
+	g.peerPicker = peerPicker
 }
