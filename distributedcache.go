@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"distributed-cache/singleflight"
 	"errors"
 	"log"
 	"sync"
@@ -53,6 +54,8 @@ type Group struct {
 	coreCache cache
 	// 查找节点
 	peerPicker PeerPicker
+	// 保证每一个key只会被获取一次
+	loader *singleflight.Group
 }
 
 var (
@@ -71,6 +74,7 @@ func NewGroup(name string, cacheMaxBytes int64, gettr Gettr) *Group {
 		name:      name,
 		gettr:     gettr,
 		coreCache: cache{mu: &sync.Mutex{}, cacheMaxBytes: cacheMaxBytes},
+		loader:    &singleflight.Group{},
 	}
 	groups[name] = g
 	return g
@@ -102,20 +106,29 @@ func (g *Group) Get(key string) (ByteView, error) {
 }
 
 func (g *Group) load(key string) (ByteView, error) {
-	// 注册了集群节点
-	if g.peerPicker != nil {
-		var err error
-		// key匹配到了集群节点
-		if peer, ok := g.peerPicker.PickPeer(key); ok {
-			// 从匹配的节点中获取了信息
-			if value, err := g.getFromCluster(peer, key); err == nil {
-				return value, nil
+	// 封装
+	viewI, err := g.loader.Do(key, func() (interface{}, error) {
+		// 注册了集群节点
+		if g.peerPicker != nil {
+			var err error
+			// key匹配到了集群节点
+			if peer, ok := g.peerPicker.PickPeer(key); ok {
+				// 从匹配的节点中获取了信息
+				if value, err := g.getFromCluster(peer, key); err == nil {
+					return value, nil
+				}
+				// 从集群获取失败
+				log.Println("[GeeCache] Failed to get from peer", err)
 			}
-			// 从集群获取失败
-			log.Println("[GeeCache] Failed to get from peer", err)
 		}
+		return g.getFromLocalDB(key)
+	})
+
+	if err == nil {
+		return viewI.(ByteView), nil
 	}
-	return g.getFromLocalDB(key)
+
+	return ByteView{}, err
 }
 
 // (2) 集群中获取数据
