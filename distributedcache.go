@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log"
 	"sync"
+
+	pb "distributed-cache/proto"
 )
 
 // 负责与外部交互，控制缓存存储和获取的主流程
@@ -133,11 +135,16 @@ func (g *Group) load(key string) (ByteView, error) {
 
 // (2) 集群中获取数据
 func (g *Group) getFromCluster(peer PeerService, key string) (ByteView, error) {
-	bytes, err := peer.Get(g.name, key)
+	req := &pb.Request{
+		Group: g.name,
+		Key: key,
+	}
+	res := &pb.Response{}
+	err := peer.Get(req, res)
 	if err != nil {
 		return ByteView{}, err
 	}
-	return ByteView{b: bytes}, nil
+	return ByteView{b: res.GetValue()}, nil
 }
 
 // （3）数据源（数据库）获取缓存添加到缓存中。
