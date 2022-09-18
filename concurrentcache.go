@@ -9,7 +9,7 @@ import (
 // 实现并发控制
 
 type cache struct {
-	mu            *sync.Mutex
+	mu            *sync.RWMutex
 	lru           *lru.Cache
 	cacheMaxBytes int64
 }
@@ -26,8 +26,8 @@ func (c *cache) add(key string, value ByteView) {
 }
 
 func (c *cache) get(key string) (value ByteView, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.lru == nil {
 		return
 	}

@@ -20,7 +20,7 @@ import (
 */
 
 /*
-	流程2：
+	图一中的流程2：
 	使用一致性哈希选择节点        是                                    是
     |-----> 是否是远程节点 -----> HTTP 客户端访问远程节点 --> 成功？-----> 服务端返回返回值
                     |  否                                    ↓  否
@@ -29,7 +29,10 @@ import (
 
 // （3）如果缓存不存在，应该从数据源（数据库）获取缓存添加到缓存中。为了保持可扩展性，这里设计了一个回调函数，当缓存不存在时，调用这个函数，得到源数据。
 
-// Gettr 接口为一个key载入数据
+// 这里为一个函数式接口，只有一个函数实现的接口就可以被定义为函数式接口。即实现者不需要用额外的结构体来实现这个接口。
+// 而是写一个函数，然后类型转换。
+// 函数式接口可以让程序看起来更简洁
+// Gettr 接口为一个key载入数据，这里是用来回调的。
 type Gettr interface {
 	Get(key string) ([]byte, error)
 }
@@ -54,7 +57,7 @@ type Group struct {
 	gettr Gettr
 	// 并发控制缓存
 	coreCache cache
-	// 查找节点
+	// 查找远程节点
 	peerPicker PeerPicker
 	// 保证每一个key只会被获取一次
 	loader *singleflight.Group
@@ -75,7 +78,7 @@ func NewGroup(name string, cacheMaxBytes int64, gettr Gettr) *Group {
 	g := &Group{
 		name:      name,
 		gettr:     gettr,
-		coreCache: cache{mu: &sync.Mutex{}, cacheMaxBytes: cacheMaxBytes},
+		coreCache: cache{mu: &sync.RWMutex{}, cacheMaxBytes: cacheMaxBytes},
 		loader:    &singleflight.Group{},
 	}
 	groups[name] = g
@@ -103,7 +106,7 @@ func (g *Group) Get(key string) (ByteView, error) {
 		return v, nil
 	}
 
-	// 获取k-v
+	// 获取k-v，(2)(3)
 	return g.load(key)
 }
 
@@ -134,10 +137,10 @@ func (g *Group) load(key string) (ByteView, error) {
 }
 
 // (2) 集群中获取数据
-func (g *Group) getFromCluster(peer PeerService, key string) (ByteView, error) {
+func (g *Group) getFromCluster(peer PeerServer, key string) (ByteView, error) {
 	req := &pb.Request{
 		Group: g.name,
-		Key: key,
+		Key:   key,
 	}
 	res := &pb.Response{}
 	err := peer.Get(req, res)
@@ -160,10 +163,12 @@ func (g *Group) getFromLocalDB(key string) (ByteView, error) {
 	return v, nil
 }
 
+// 添加k-v
 func (g *Group) populateCache(key string, value ByteView) {
 	g.coreCache.add(key, value)
 }
 
+// HTTPServer 实现了 PeerPicker，传递进来。
 func (g *Group) RegisterPeers(peerPicker PeerPicker) {
 	if g.peerPicker != nil {
 		log.Println("RegisterPeerPicker called more than once")

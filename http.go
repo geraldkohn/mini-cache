@@ -3,6 +3,7 @@ package cache
 import (
 	"distributed-cache/consistenthash"
 	pb "distributed-cache/proto"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -17,12 +19,14 @@ import (
 // 提供被其他节点访问的能力（基于HTTP）
 
 const (
-	defaultBasePath = "/api/cache/"
-	defaultReplicas = 50
+	defaultBasePath      = "/api/cache/"
+	defaultReplicas      = 50
+	defaultConnectNumber = 5000
+	defaultTimeout       = 5 * time.Second
 )
 
 // HTTP Server Pool
-type HttpPool struct {
+type HttpServer struct {
 	// 记录URL地址，主机名、IP、端口号。
 	selfPath string
 	// 节点通讯地址的前缀，self+basePath开头的请求，就用于节点之间的访问。
@@ -33,23 +37,40 @@ type HttpPool struct {
 	consistentHashPool *consistenthash.Pool
 	// 映射远程节点的的http client。keyed by e.g. "http://10.0.0.2:8008"
 	httpClient map[string]*httpClient
+	// 控制HTTP连接数量
+	ch chan interface{}
 }
 
 // 初始化节点的HTTPPool
-func NewHttpPool(selfPath string) *HttpPool {
-	return &HttpPool{
-		selfPath: selfPath,
-		basePath: defaultBasePath,
+func NewHttpServer(selfPath string) *HttpServer {
+	return &HttpServer{
+		selfPath:           selfPath,
+		basePath:           defaultBasePath,
+		mu:                 sync.Mutex{},
+		consistentHashPool: consistenthash.New(defaultReplicas, nil),
+		httpClient:         make(map[string]*httpClient),
+		ch:                 make(chan interface{}, defaultConnectNumber),
 	}
 }
 
 // 日志
-func (p *HttpPool) Log(format string, v ...interface{}) {
+func (p *HttpServer) Log(format string, v ...interface{}) {
 	log.Printf("[Server %s] %s", p.selfPath, fmt.Sprintf(format, v...))
 }
 
 // ServeHttp处理所有的请求
-func (p *HttpPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 控制并发数量
+	select {
+	case p.ch <- struct{}{}:
+		// 可以执行HTTP请求
+	case <-time.After(defaultTimeout):
+		// 超时
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.Error(w, errors.New("timeout").Error(), http.StatusInternalServerError)
+		return
+	}
+
 	if !strings.HasPrefix(r.URL.Path, p.basePath) {
 		log.Println("HTTPPool serving unexpected path: " + r.URL.Path)
 		return
@@ -76,7 +97,7 @@ func (p *HttpPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	body, err := proto.Marshal(&pb.Response{Value: view.ByteSlice()})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -85,24 +106,27 @@ func (p *HttpPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Write(body)
+	<-p.ch // 完成
 }
 
 // 添加新节点，需要更新映射
-func (p *HttpPool) Set(peersPath ...string) {
+func (p *HttpServer) Set(peersPath ...string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// 一致性Hash算法初始化
-	p.consistentHashPool = consistenthash.New(defaultReplicas, nil)
+	// 一致性Hash算法初始化, 这里使用延迟初始化。
+	// if p.consistentHashPool == nil {
+	// 	p.consistentHashPool = consistenthash.New(defaultReplicas, nil)
+	// }
 	p.consistentHashPool.Add(peersPath...)
 	// 为每一个节点都初始化一个Http客户端
-	p.httpClient = make(map[string]*httpClient, len(peersPath))
+	// p.httpClient = make(map[string]*httpClient, len(peersPath))
 	for _, peerPath := range peersPath {
 		p.httpClient[peerPath] = &httpClient{baseURL: peerPath + p.basePath}
 	}
 }
 
 // PickerPeer() 包装了一致性哈希算法的 Get() 方法，根据具体的 key，选择节点，返回节点对应的 HTTP 客户端。
-func (p *HttpPool) PickPeer(key string) (PeerService, bool) {
+func (p *HttpServer) PickPeer(key string) (PeerServer, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// 根据虚拟节点的key来查找真实节点的位置。

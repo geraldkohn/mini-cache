@@ -50,7 +50,7 @@ func createGroup() *cache.Group {
 }
 
 func startCacheServer(addr string, addrs []string, group *cache.Group) {
-	peers := cache.NewHttpPool(addr)
+	peers := cache.NewHttpServer(addr)
 	peers.Set(addrs...)
 	group.RegisterPeers(peers)
 	log.Println("cache is running at", addr)
