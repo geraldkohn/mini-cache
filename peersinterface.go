@@ -1,7 +1,7 @@
 package cache
 
 import (
-	pb "distributed-cache/proto"
+	pb "mini-cache/proto"
 )
 
 // PeerPicker is the interface that must be implemented to locate

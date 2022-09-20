@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"distributed-cache/lru"
+	"mini-cache/lru"
 )
 
 type String string

@@ -1,12 +1,12 @@
 package cache
 
 import (
-	"distributed-cache/singleflight"
+	"mini-cache/singleflight"
 	"errors"
 	"log"
 	"sync"
 
-	pb "distributed-cache/proto"
+	pb "mini-cache/proto"
 )
 
 // 负责与外部交互，控制缓存存储和获取的主流程

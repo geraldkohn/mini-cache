@@ -1,8 +1,8 @@
 package cache
 
 import (
-	"distributed-cache/consistenthash"
-	pb "distributed-cache/proto"
+	"mini-cache/consistenthash"
+	pb "mini-cache/proto"
 	"errors"
 	"fmt"
 	"io/ioutil"

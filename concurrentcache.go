@@ -3,7 +3,7 @@ package cache
 import (
 	"sync"
 
-	"distributed-cache/lru"
+	"mini-cache/lru"
 )
 
 // 实现并发控制

@@ -7,7 +7,7 @@ import (
 	"log"
 	"net/http"
 
-	cache "distributed-cache"
+	cache "mini-cache"
 )
 
 // var db = map[string]string{

@@ -1,4 +1,4 @@
-module distributed-cache
+module mini-cache
 
 go 1.18
 
