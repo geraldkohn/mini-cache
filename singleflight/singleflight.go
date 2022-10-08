@@ -69,26 +69,23 @@ func (g *Group) DoChan(key string, fn func() (interface{}, error)) <-chan Result
 	}
 	// 正在调用
 	if c, ok := g.m[key]; ok {
-		g.mu.Unlock()
 		c.chans = append(c.chans, ch)
-		c.wg.Wait() //等待调用结束
+		g.mu.Unlock()
 		return ch   // 调用结束, 返回值
 	}
 	// 没有被调用过
 	c := new(call) // 新增call
-	c.wg.Add(1)
 	g.m[key] = c
 	g.mu.Unlock()
 
 	c.val, c.err = fn() // 执行fn, 得到值
-	c.wg.Done()         // 执行完毕, 解锁
 
 	g.mu.Lock()
 	delete(g.m, key)
+	g.mu.Unlock()
 	// 正在监听的每个通道都发送一个信息
 	for _, ch := range c.chans {
 		ch <- Result{c.val, c.err}
 	}
-	g.mu.Unlock()
 	return ch
 }
