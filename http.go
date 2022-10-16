@@ -1,7 +1,7 @@
 package cache
 
 import (
-	"mini-cache/consistenthash"
+	"mini-cache/consistent-hash"
 	pb "mini-cache/proto"
 	"errors"
 	"fmt"

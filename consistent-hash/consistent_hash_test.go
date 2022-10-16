@@ -3,7 +3,7 @@ package consistenthash_test
 import (
 	"testing"
 	"strconv"
-	"mini-cache/consistenthash"
+	"mini-cache/consistent-hash"
 )
 
 func TestHashing(t *testing.T) {
