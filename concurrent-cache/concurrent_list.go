@@ -1,20 +1,24 @@
 package concurrentcache
 
 import (
-	"container/list"
 	"sync/atomic"
 	"unsafe"
 )
 
+// lock-free list
+// FIFO, 支持随机删除
+
 type concurrentList struct {
-	length int
-	head unsafe.Pointer
-	tail unsafe.Pointer
+	length    uint64 // 元素个数
+	usedBytes uint64 // 使用的内存数量
+	head      unsafe.Pointer
+	tail      unsafe.Pointer
 }
 
 type node struct {
+	prev unsafe.Pointer // 指向前一个节点
 	next unsafe.Pointer // 指向后一个节点
-	data *list.Element  // 指向的list中的元素和
+	data value
 }
 
 func newConcurrentList() *concurrentList {
@@ -23,28 +27,37 @@ func newConcurrentList() *concurrentList {
 	return &concurrentList{head: n, tail: n}
 }
 
-// 入队列
+// delete the given node from the queue
+func (cl *concurrentList) delete(n *node) {
+	for {
+
+	}
+}
+
+// enqueue puts the given node at the tail of the queue
 func (cl *concurrentList) enqueue(n *node) {
 	for {
 		tail := load(&cl.tail)
 		tailNext := load(&tail.next)
 		if tail == load(&cl.tail) { // 尾部还是尾部, 因为有可能有节点又来到尾部(并发)
 			if tailNext == nil { // 尾部后面没有新数据入队列, 有可能有节点来到尾部(并发)
-				if cas(&tail.next, tailNext, n) { // 将节点增加到队尾, 此时也有可能有节点来到尾部, 改变tailNext的值, 让它不是nil
-					// 入队成功, 需要移动尾巴指针. 此时也存在并发问题, 但是如果有节点新来, 那么会再 if tailNext == nil 这步被判错(因为 cl.tail.next = n)
-					// 然后走else, 将尾指针换成尾指针的next, 如果另一个线程的else先执行完毕, 下面的操作就会失败.
-					// 但是无论成功还是失败, 尾指针已经再正确的位置上了. 因为要么另一个线程else成功, 更新尾指针的位置, 要么当前线程成功, 更新尾指针的位置.
-					cas(&cl.tail, tail, n)
+				if cas(&tail.next, nil, n) { // 这里替换tail节点的next指针
+					// cas(&n.prev, nil, tail) // 处理node.prev
+					cas(&cl.tail, tail, n) // 如果执行失败, 那么说明其他线程已经移动了尾指针的位置
+					store(&n.prev, tail)
+					atomic.AddUint64(&cl.usedBytes, n.data.len())
+					atomic.AddUint64(&cl.length, 1)
 					return
 				}
-			} else { // 已经有数据来到尾部, 需要移动尾指针
+			} else { // 已经有数据来到尾部, 需要移动尾指针(并发问题)
 				cas(&cl.tail, tail, tailNext)
 			}
 		}
 	}
 }
 
-// 出队列
+// dequeue removes and returns the node at the head of the queue.
+// It returns nil if the queue is empty.
 func (cl *concurrentList) dequeue() *node {
 	for {
 		head := load(&cl.head)
@@ -63,11 +76,27 @@ func (cl *concurrentList) dequeue() *node {
 				n := headNext
 				// 头指针移动到下一个, 如果没有compare成功, 说明有线程已经修改了头指针的位置. 就是意味着这个队头元素已经被取出了. 需要重试.
 				if cas(&cl.head, head, headNext) {
+					atomic.AddUint64(&cl.usedBytes, ^uint64(n.data.len()))
+					atomic.AddUint64(&cl.length, ^uint64(0))	// length-1
 					return n
 				}
 			}
 		}
 	}
+}
+
+// 队列的元素个数
+func (cl *concurrentList) keyCount() uint64 {
+	return cl.length
+}
+
+// 使用的内存
+func (cl *concurrentList) usedMemorySize() uint64 {
+	return cl.usedBytes
+}
+
+func store(p *unsafe.Pointer, new *node) {
+	atomic.StorePointer(p, unsafe.Pointer(new))
 }
 
 func load(p *unsafe.Pointer) *node {

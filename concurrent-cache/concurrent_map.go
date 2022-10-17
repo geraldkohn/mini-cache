@@ -11,7 +11,7 @@ type concurrentMap []*concurrentMapShard
 
 // 分成shard_count个分片的map
 type concurrentMapShard struct {
-	items map[string]value
+	items map[string]*node
 	sync.RWMutex
 }
 
@@ -19,7 +19,7 @@ type concurrentMapShard struct {
 func newConcurrentMap() concurrentMap {
 	m := make(concurrentMap, shard_count)
 	for i := 0; i < shard_count; i++ {
-		m[i] = &concurrentMapShard{items: make(map[string]value)}
+		m[i] = &concurrentMapShard{items: make(map[string]*node)}
 	}
 	return m
 }
@@ -37,7 +37,7 @@ func (m concurrentMap) getShard(key string) *concurrentMapShard {
 	return m[crc%uint32(shard_count)]
 }
 
-func (m concurrentMap) set(key string, v value) {
+func (m concurrentMap) set(key string, v *node) {
 	// 根据key计算分片
 	shard := m.getShard(key)
 	shard.Lock()
@@ -46,7 +46,7 @@ func (m concurrentMap) set(key string, v value) {
 	shard.Unlock()
 }
 
-func (m concurrentMap) get(key string) (v value, ok bool) {
+func (m concurrentMap) get(key string) (v *node, ok bool) {
 	// 根据key计算分片
 	shard := m.getShard(key)
 	shard.RLock()
