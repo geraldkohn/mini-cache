@@ -15,10 +15,16 @@ type concurrentList struct {
 	tail      unsafe.Pointer
 }
 
+// 存放node中的数据
+type entry struct {
+	key  string
+	data value
+}
+
 type node struct {
 	prev unsafe.Pointer // 指向前一个节点
 	next unsafe.Pointer // 指向后一个节点
-	data value
+	entry
 }
 
 func newConcurrentList() *concurrentList {
@@ -29,8 +35,15 @@ func newConcurrentList() *concurrentList {
 
 // delete the given node from the queue
 func (cl *concurrentList) delete(n *node) {
+	// 需要防止head或者tail发生并发安全问题, 需要查看论文的写法.
+	// 应该是将enqueue和dequeue整合进入就可以.
+	// 直接调用入队出队方法会出现并发问题! 一个线程执行完后没有办法拦截其他执行一部分操作的线程.
 	for {
-
+		prev := load(&n.prev)
+		next := load(&n.next)
+		if cas(&prev.next, n, next) { // 尝试修改
+			return // 修改成功
+		}
 	}
 }
 
@@ -77,7 +90,7 @@ func (cl *concurrentList) dequeue() *node {
 				// 头指针移动到下一个, 如果没有compare成功, 说明有线程已经修改了头指针的位置. 就是意味着这个队头元素已经被取出了. 需要重试.
 				if cas(&cl.head, head, headNext) {
 					atomic.AddUint64(&cl.usedBytes, ^uint64(n.data.len()))
-					atomic.AddUint64(&cl.length, ^uint64(0))	// length-1
+					atomic.AddUint64(&cl.length, ^uint64(0)) // length-1
 					return n
 				}
 			}

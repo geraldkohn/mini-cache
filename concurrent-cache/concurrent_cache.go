@@ -19,7 +19,8 @@ func NewConcurrentCache(maxBytes uint64) *concurrentCache {
 }
 
 func (c *concurrentCache) Add(key string, v value) {
-	n := &node{prev: nil, next: nil, data: v}
+	n := &node{prev: nil, next: nil, entry: entry{key: key, data: v}}
+	c.cm.set(key, n)
 	c.cl.enqueue(n)
 }
 
@@ -33,7 +34,8 @@ func (c *concurrentCache) Get(key string) (v value, ok bool) {
 
 func (c *concurrentCache) RemoveOldest() {
 	for c.cacheMaxBytes != 0 && c.cacheMaxBytes < c.cl.usedMemorySize() {
-		c.cl.dequeue()
+		n := c.cl.dequeue()
+		c.cm.delete(n.key)
 	}
 }
 

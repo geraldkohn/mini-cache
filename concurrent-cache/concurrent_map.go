@@ -54,3 +54,11 @@ func (m concurrentMap) get(key string) (v *node, ok bool) {
 	shard.RUnlock()
 	return
 }
+
+func (m concurrentMap) delete(key string) {
+	// 根据key计算分片
+	shard := m.getShard(key)
+	shard.Lock()
+	delete(shard.items, key)
+	shard.Unlock()
+}
