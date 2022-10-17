@@ -1,6 +1,7 @@
 package concurrentcache
 
 import (
+	"mini-cache/view"
 	"sync/atomic"
 	"unsafe"
 )
@@ -18,7 +19,7 @@ type concurrentList struct {
 // 存放node中的数据
 type entry struct {
 	key  string
-	data value
+	data view.ByteView
 }
 
 type node struct {
@@ -58,7 +59,7 @@ func (cl *concurrentList) enqueue(n *node) {
 					// cas(&n.prev, nil, tail) // 处理node.prev
 					cas(&cl.tail, tail, n) // 如果执行失败, 那么说明其他线程已经移动了尾指针的位置
 					store(&n.prev, tail)
-					atomic.AddUint64(&cl.usedBytes, n.data.len())
+					atomic.AddUint64(&cl.usedBytes, n.data.Len())
 					atomic.AddUint64(&cl.length, 1)
 					return
 				}
@@ -89,7 +90,7 @@ func (cl *concurrentList) dequeue() *node {
 				n := headNext
 				// 头指针移动到下一个, 如果没有compare成功, 说明有线程已经修改了头指针的位置. 就是意味着这个队头元素已经被取出了. 需要重试.
 				if cas(&cl.head, head, headNext) {
-					atomic.AddUint64(&cl.usedBytes, ^uint64(n.data.len()))
+					atomic.AddUint64(&cl.usedBytes, ^uint64(n.data.Len()))
 					atomic.AddUint64(&cl.length, ^uint64(0)) // length-1
 					return n
 				}

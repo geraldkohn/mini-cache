@@ -1,9 +1,11 @@
 package cache
 
 import (
-	"mini-cache/singleflight"
 	"errors"
 	"log"
+	concurrentcache "mini-cache/concurrent-cache"
+	"mini-cache/singleflight"
+	"mini-cache/view"
 	"sync"
 
 	pb "mini-cache/proto"
@@ -56,7 +58,7 @@ type Group struct {
 	// 缓存未命中时获取源数据的回调函数
 	gettr Gettr
 	// 并发控制缓存
-	coreCache cache
+	coreCache concurrentcache.ConcurrentCache
 	// 查找远程节点
 	peerPicker PeerPicker
 	// 保证每一个key只会被获取一次
@@ -78,7 +80,7 @@ func NewGroup(name string, cacheMaxBytes int64, gettr Gettr) *Group {
 	g := &Group{
 		name:      name,
 		gettr:     gettr,
-		coreCache: cache{mu: &sync.RWMutex{}, cacheMaxBytes: cacheMaxBytes},
+		coreCache: concurrentcache.NewConcurrentCache(uint64(cacheMaxBytes)),
 		loader:    &singleflight.Group{},
 	}
 	groups[name] = g
@@ -95,13 +97,13 @@ func GetGroup(name string) (*Group, bool) {
 }
 
 // 从指定Group的缓存中读取key值。
-func (g *Group) Get(key string) (ByteView, error) {
+func (g *Group) Get(key string) (view.ByteView, error) {
 	if key == "" {
-		return ByteView{}, errors.New("key is required")
+		return view.ByteView{}, errors.New("key is required")
 	}
 
 	// (1)命中本地缓存
-	if v, ok := g.coreCache.get(key); ok {
+	if v, ok := g.coreCache.Get(key); ok {
 		log.Println("Cache Hit!")
 		return v, nil
 	}
@@ -110,7 +112,7 @@ func (g *Group) Get(key string) (ByteView, error) {
 	return g.load(key)
 }
 
-func (g *Group) load(key string) (ByteView, error) {
+func (g *Group) load(key string) (view.ByteView, error) {
 	// 封装
 	viewI, err := g.loader.Do(key, func() (interface{}, error) {
 		// 注册了集群节点
@@ -130,14 +132,14 @@ func (g *Group) load(key string) (ByteView, error) {
 	})
 
 	if err == nil {
-		return viewI.(ByteView), nil
+		return viewI.(view.ByteView), nil
 	}
 
-	return ByteView{}, err
+	return view.ByteView{}, err
 }
 
 // (2) 集群中获取数据
-func (g *Group) getFromCluster(peer PeerServer, key string) (ByteView, error) {
+func (g *Group) getFromCluster(peer PeerServer, key string) (view.ByteView, error) {
 	req := &pb.Request{
 		Group: g.name,
 		Key:   key,
@@ -145,27 +147,27 @@ func (g *Group) getFromCluster(peer PeerServer, key string) (ByteView, error) {
 	res := &pb.Response{}
 	err := peer.Get(req, res)
 	if err != nil {
-		return ByteView{}, err
+		return view.ByteView{}, err
 	}
-	return ByteView{b: res.GetValue()}, nil
+	return view.ByteView{B: res.GetValue()}, nil
 }
 
 // （3）数据源（数据库）获取缓存添加到缓存中。
-func (g *Group) getFromLocalDB(key string) (ByteView, error) {
+func (g *Group) getFromLocalDB(key string) (view.ByteView, error) {
 	// 调用回调函数，获取本地数据库中的k-v值。
 	byteSlice, err := g.gettr.Get(key)
 	if err != nil {
-		return ByteView{}, err
+		return view.ByteView{}, err
 	}
 
-	v := ByteView{b: byteSlice}
+	v := view.ByteView{B: byteSlice}
 	g.populateCache(key, v)
 	return v, nil
 }
 
 // 添加k-v
-func (g *Group) populateCache(key string, value ByteView) {
-	g.coreCache.add(key, value)
+func (g *Group) populateCache(key string, value view.ByteView) {
+	g.coreCache.Add(key, value)
 }
 
 // HTTPServer 实现了 PeerPicker，传递进来。
