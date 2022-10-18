@@ -35,6 +35,8 @@ func (m concurrentMap) getShard(key string) *concurrentMapShard {
 	table := crc32.MakeTable(0xD5828281)
 	crc := crc32.Checksum([]byte(key), table)
 	return m[crc%uint32(shard_count)]
+
+	// crc = crc32.ChecksumIEEE([]byte(key))
 }
 
 func (m concurrentMap) set(key string, v *node) {

@@ -1,7 +1,6 @@
 package concurrentcache
 
 import (
-	"mini-cache/view"
 	"sync/atomic"
 	"unsafe"
 )
@@ -14,12 +13,6 @@ type concurrentList struct {
 	usedBytes uint64 // 使用的内存数量
 	head      unsafe.Pointer
 	tail      unsafe.Pointer
-}
-
-// 存放node中的数据
-type entry struct {
-	key  string
-	data view.ByteView
 }
 
 type node struct {

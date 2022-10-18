@@ -106,7 +106,7 @@ func (p *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Write(body)
-	<-p.ch // 完成
+	<-p.ch // 完成, 释放占用的HTTP连接数量
 }
 
 // 添加新节点，需要更新映射
@@ -142,7 +142,7 @@ type httpClient struct {
 	baseURL string
 }
 
-// 实现HTTP客户端接口
+// 实现HTTP客户端接口, 这是用来发送请求的.
 func (h *httpClient) Get(in *pb.Request, out *pb.Response) error {
 	u := fmt.Sprintf(
 		"%v/%v/%v",
@@ -150,7 +150,7 @@ func (h *httpClient) Get(in *pb.Request, out *pb.Response) error {
 		url.QueryEscape(in.GetGroup()),
 		url.QueryEscape(in.GetKey()),
 	)
-	// 获取返回值
+	// 发送HTTP请求, 获取返回值
 	res, err := http.Get(u)
 	if err != nil {
 		return err

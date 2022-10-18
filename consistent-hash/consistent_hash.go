@@ -31,7 +31,7 @@ func New(replicas int, fn Hash) *Pool {
 	m := &Pool{
 		replicas:     replicas,
 		hash:         fn,
-		vMapToR:          make(map[int]string),
+		vMapToR:      make(map[int]string),
 		virtualNodes: make([]int, 0),
 	}
 	if m.hash == nil {

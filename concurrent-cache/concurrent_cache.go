@@ -17,9 +17,15 @@ func NewConcurrentCache(maxBytes uint64) ConcurrentCache {
 }
 
 func (c *ConcurrentCache) Add(key string, v view.ByteView) {
-	n := &node{prev: nil, next: nil, entry: entry{key: key, data: v}}
-	c.cm.set(key, n)
-	c.cl.enqueue(n)
+	if n, ok := c.cm.get(key); ok { // 已经存在
+		c.cl.delete(n)  // 从队列中删除
+		n.data = v      // 更新
+		c.cl.enqueue(n) // 入队列
+	} else {
+		n := &node{prev: nil, next: nil, entry: entry{key: key, data: v}}
+		c.cm.set(key, n)
+		c.cl.enqueue(n)
+	}
 }
 
 func (c *ConcurrentCache) Get(key string) (v view.ByteView, ok bool) {
@@ -43,4 +49,10 @@ func (c *ConcurrentCache) KeyCount() uint64 {
 
 func (c *ConcurrentCache) UsedMemorySize() uint64 {
 	return c.cl.usedMemorySize()
+}
+
+// 存放在node中的数据格式
+type entry struct {
+	key  string
+	data view.ByteView
 }
